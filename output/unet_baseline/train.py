@@ -11,29 +11,90 @@ from preprocessing import load_dataset, make_loaders
 from utils import load_config, set_seed
 
 
-def train_one_epoch(model, loader, loss_fn, optimizer, device):
+def gradient_loss(pred, target):
+    """
+    Spatial gradient loss for tensors with shape:
+
+        (B, C, H, W)
+
+    It compares first-order finite differences in the y and x directions.
+    """
+
+    pred_dy = pred[:, :, 1:, :] - pred[:, :, :-1, :]
+    target_dy = target[:, :, 1:, :] - target[:, :, :-1, :]
+
+    pred_dx = pred[:, :, :, 1:] - pred[:, :, :, :-1]
+    target_dx = target[:, :, :, 1:] - target[:, :, :, :-1]
+
+    loss_dy = torch.mean(torch.abs(pred_dy - target_dy))
+    loss_dx = torch.mean(torch.abs(pred_dx - target_dx))
+
+    return 0.5 * (loss_dy + loss_dx)
+
+
+def compute_loss(pred, target, pixel_loss_fn, gradient_loss_weight):
+    pixel = pixel_loss_fn(pred, target)
+    grad = gradient_loss(pred, target)
+
+    total = pixel + gradient_loss_weight * grad
+
+    return total, pixel, grad
+
+
+def train_one_epoch(
+    model,
+    loader,
+    pixel_loss_fn,
+    optimizer,
+    device,
+    gradient_loss_weight,
+):
     model.train()
-    losses = []
+
+    total_losses = []
+    pixel_losses = []
+    gradient_losses = []
 
     for x, y in loader:
         x = x.to(device)
         y = y.to(device)
 
         pred = model(x)
-        loss = loss_fn(pred, y)
+
+        total_loss, pixel_loss, grad_loss = compute_loss(
+            pred=pred,
+            target=y,
+            pixel_loss_fn=pixel_loss_fn,
+            gradient_loss_weight=gradient_loss_weight,
+        )
 
         optimizer.zero_grad()
-        loss.backward()
+        total_loss.backward()
         optimizer.step()
 
-        losses.append(loss.item())
+        total_losses.append(total_loss.item())
+        pixel_losses.append(pixel_loss.item())
+        gradient_losses.append(grad_loss.item())
 
-    return float(np.mean(losses))
+    return {
+        "total": float(np.mean(total_losses)),
+        "pixel": float(np.mean(pixel_losses)),
+        "gradient": float(np.mean(gradient_losses)),
+    }
 
 
-def validate(model, loader, loss_fn, device):
+def validate(
+    model,
+    loader,
+    pixel_loss_fn,
+    device,
+    gradient_loss_weight,
+):
     model.eval()
-    losses = []
+
+    total_losses = []
+    pixel_losses = []
+    gradient_losses = []
 
     with torch.no_grad():
         for x, y in loader:
@@ -41,11 +102,23 @@ def validate(model, loader, loss_fn, device):
             y = y.to(device)
 
             pred = model(x)
-            loss = loss_fn(pred, y)
 
-            losses.append(loss.item())
+            total_loss, pixel_loss, grad_loss = compute_loss(
+                pred=pred,
+                target=y,
+                pixel_loss_fn=pixel_loss_fn,
+                gradient_loss_weight=gradient_loss_weight,
+            )
 
-    return float(np.mean(losses))
+            total_losses.append(total_loss.item())
+            pixel_losses.append(pixel_loss.item())
+            gradient_losses.append(grad_loss.item())
+
+    return {
+        "total": float(np.mean(total_losses)),
+        "pixel": float(np.mean(pixel_losses)),
+        "gradient": float(np.mean(gradient_losses)),
+    }
 
 
 def main(name="experiment"):
@@ -66,57 +139,93 @@ def main(name="experiment"):
         batch_size=cfg["training"]["batch_size"],
     )
 
+    gradient_loss_weight = float(cfg["training"].get("gradient_loss_weight", 0.0))
+
     print("experiment:", name, flush=True)
     print("device:", device, flush=True)
     print("epochs:", cfg["training"]["epochs"], flush=True)
     print("train batches:", len(train_loader), flush=True)
     print("val batches:", len(val_loader), flush=True)
+    print("gradient_loss_weight:", gradient_loss_weight, flush=True)
 
     model = build_model(
         input_shape=cfg["model"]["input_shape"],
         base_filters=cfg["model"]["base_filters"],
     ).to(device)
 
-    loss_fn = nn.L1Loss()
+    pixel_loss_fn = nn.L1Loss()
+
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=cfg["training"]["learning_rate"],
     )
 
     best_val_loss = float("inf")
+    best_checkpoint_path = model_dir / "best_model.pt"
+    last_checkpoint_path = model_dir / "last_model.pt"
 
     for epoch in range(1, cfg["training"]["epochs"] + 1):
-        train_loss = train_one_epoch(model, train_loader, loss_fn, optimizer, device)
-        val_loss = validate(model, val_loader, loss_fn, device)
+        train_losses = train_one_epoch(
+            model=model,
+            loader=train_loader,
+            pixel_loss_fn=pixel_loss_fn,
+            optimizer=optimizer,
+            device=device,
+            gradient_loss_weight=gradient_loss_weight,
+        )
+
+        val_losses = validate(
+            model=model,
+            loader=val_loader,
+            pixel_loss_fn=pixel_loss_fn,
+            device=device,
+            gradient_loss_weight=gradient_loss_weight,
+        )
 
         print(
             f"epoch {epoch}/{cfg['training']['epochs']} "
-            f"train_loss={train_loss:.6f} "
-            f"val_loss={val_loss:.6f}",
+            f"train_total={train_losses['total']:.6f} "
+            f"train_pixel={train_losses['pixel']:.6f} "
+            f"train_grad={train_losses['gradient']:.6f} "
+            f"val_total={val_losses['total']:.6f} "
+            f"val_pixel={val_losses['pixel']:.6f} "
+            f"val_grad={val_losses['gradient']:.6f}",
             flush=True,
         )
 
-        writer.add_scalar("loss/train", train_loss, epoch)
-        writer.add_scalar("loss/val", val_loss, epoch)
+        writer.add_scalar("loss/train_total", train_losses["total"], epoch)
+        writer.add_scalar("loss/train_pixel", train_losses["pixel"], epoch)
+        writer.add_scalar("loss/train_gradient", train_losses["gradient"], epoch)
+
+        writer.add_scalar("loss/val_total", val_losses["total"], epoch)
+        writer.add_scalar("loss/val_pixel", val_losses["pixel"], epoch)
+        writer.add_scalar("loss/val_gradient", val_losses["gradient"], epoch)
+
         writer.add_scalar("lr", optimizer.param_groups[0]["lr"], epoch)
 
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+        if val_losses["total"] < best_val_loss:
+            best_val_loss = val_losses["total"]
 
-            torch.save(model.state_dict(), model_dir / "best_model.pt")
+            torch.save(model.state_dict(), best_checkpoint_path)
 
             print(
                 f"saved best_model.pt "
                 f"epoch={epoch} "
-                f"val_loss={val_loss:.6f}",
+                f"val_total={val_losses['total']:.6f} "
+                f"val_pixel={val_losses['pixel']:.6f} "
+                f"val_grad={val_losses['gradient']:.6f}",
                 flush=True,
             )
 
-    torch.save(model.state_dict(), model_dir / "last_model.pt")
-    print("saved:", model_dir / "last_model.pt", flush=True)
+    torch.save(model.state_dict(), last_checkpoint_path)
+
+    print("saved:", last_checkpoint_path, flush=True)
+    print("saved best:", best_checkpoint_path, flush=True)
     print("best_val_loss:", best_val_loss, flush=True)
 
     writer.close()
+
+    return best_checkpoint_path
 
 
 if __name__ == "__main__":

@@ -1,15 +1,14 @@
 paths:
-  dataset_npz: "/home/jaksie/projects/AML/AML_project/output/ml_dataset/t2_superres_x4_patches_64_stride32_january_2026_lead000_023.npz"
-  output_dir: "/home/jaksie/projects/AML/AML_project/output/unet_baseline/model_output"
-
+  dataset_npz: "/bakha/vhome/jaksie/AML_project/output/ml_dataset/t2_superres_x4_patches_64_stride32_january_2026_lead000_023.npz"
+  output_dir: "/bakha/vhome/jaksie/AML_project/output/unet_baseline/model_output"
 
 training:
   seed: 42
   batch_size: 64
-  epochs: 3
+  epochs: 50
   learning_rate: 0.0001
   loss: "mae"
-
+  gradient_loss_weight: 0.1
 
 model:
   input_shape: [64, 64, 1]
