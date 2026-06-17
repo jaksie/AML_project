@@ -6,9 +6,9 @@ import torch.nn as nn
 def conv_block(in_channels, out_channels):
     return nn.Sequential(
         nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-        nn.ReLU(),
+        nn.SiLU(),
         nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-        nn.ReLU(),
+        nn.SiLU(), # from ReLU to SiLU
     )
 
 
@@ -111,8 +111,55 @@ class BaselineUNet(nn.Module):
         # output: (B, 1, 64, 64)
 
 
+class ResidualUNet(nn.Module):
+    def __init__(self, in_channels=1, out_channels=1, base_filters=32):
+        super().__init__()
+
+        f = base_filters
+
+        self.enc1 = conv_block(in_channels, f)
+        self.enc2 = conv_block(f, 2 * f)
+        self.bottleneck = conv_block(2 * f, 4 * f)
+
+        self.pool = nn.MaxPool2d(2)
+
+        self.up = nn.Upsample(
+            scale_factor=2,
+            mode="bilinear",
+            align_corners=False,
+        )
+
+        self.dec2 = conv_block(4 * f + 2 * f, 2 * f)
+        self.dec1 = conv_block(2 * f + f, f)
+
+        self.out = nn.Conv2d(f, out_channels, kernel_size=1)
+
+        nn.init.zeros_(self.out.weight)
+        nn.init.zeros_(self.out.bias)
+
+    def forward(self, x):
+        input_x = x
+
+        c1 = self.enc1(x)
+        c2 = self.enc2(self.pool(c1))
+
+        x = self.bottleneck(self.pool(c2))
+
+        x = self.up(x)
+        x = torch.cat([x, c2], dim=1)
+        x = self.dec2(x)
+
+        x = self.up(x)
+        x = torch.cat([x, c1], dim=1)
+        x = self.dec1(x)
+
+        residual = self.out(x)
+
+        return input_x + residual # residual learning
+
+
 def build_model(input_shape=(64, 64, 1), base_filters=32):
-    return BaselineUNet(
+    return ResidualUNet(
         in_channels=input_shape[-1],
         out_channels=1,
         base_filters=base_filters,
