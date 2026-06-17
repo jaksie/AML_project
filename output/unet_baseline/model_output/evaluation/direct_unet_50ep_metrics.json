@@ -1,0 +1,22 @@
+{
+  "experiment": "direct_unet_50ep",
+  "checkpoint": "/bakha/vhome/jaksie/AML_project/output/unet_baseline/model_output/model/last_model.pt",
+  "n_test": 11664,
+  "baseline": {
+    "mae": 0.32613420486450195,
+    "rmse": 0.5386086702346802,
+    "bias": 0.00022195592464413494,
+    "gradient_mae": 0.17937803268432617
+  },
+  "model": {
+    "mae": 0.21488326787948608,
+    "rmse": 0.36135154962539673,
+    "bias": -0.027306081727147102,
+    "gradient_mae": 0.1662154495716095
+  },
+  "improvement": {
+    "mae": 0.11125093698501587,
+    "rmse": 0.17725712060928345,
+    "gradient_mae": 0.013162583112716675
+  }
+}

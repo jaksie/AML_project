@@ -1,0 +1,22 @@
+{
+  "experiment": "residual_unet_silu_best_50ep",
+  "checkpoint": "/bakha/vhome/jaksie/AML_project/output/unet_baseline/model_output/model/best_model.pt",
+  "n_test": 11664,
+  "baseline": {
+    "mae": 0.32613420486450195,
+    "rmse": 0.5386086702346802,
+    "bias": 0.00022195592464413494,
+    "gradient_mae": 0.17937803268432617
+  },
+  "model": {
+    "mae": 0.21221144497394562,
+    "rmse": 0.3616664707660675,
+    "bias": -0.010911772027611732,
+    "gradient_mae": 0.16622552275657654
+  },
+  "improvement": {
+    "mae": 0.11392275989055634,
+    "rmse": 0.17694219946861267,
+    "gradient_mae": 0.013152509927749634
+  }
+}
