@@ -35,7 +35,6 @@ def gradient_loss(pred, target):
 def compute_loss(pred, target, pixel_loss_fn, gradient_loss_weight):
     pixel = pixel_loss_fn(pred, target)
     grad = gradient_loss(pred, target)
-
     total = pixel + gradient_loss_weight * grad
 
     return total, pixel, grad
@@ -140,6 +139,8 @@ def main(name="experiment"):
     )
 
     gradient_loss_weight = float(cfg["training"].get("gradient_loss_weight", 0.0))
+    patience = int(cfg["training"].get("early_stopping_patience", 0))
+    min_delta = float(cfg["training"].get("early_stopping_min_delta", 0.0))
 
     print("experiment:", name, flush=True)
     print("device:", device, flush=True)
@@ -147,6 +148,8 @@ def main(name="experiment"):
     print("train batches:", len(train_loader), flush=True)
     print("val batches:", len(val_loader), flush=True)
     print("gradient_loss_weight:", gradient_loss_weight, flush=True)
+    print("early_stopping_patience:", patience, flush=True)
+    print("early_stopping_min_delta:", min_delta, flush=True)
 
     model = build_model(
         input_shape=cfg["model"]["input_shape"],
@@ -161,6 +164,9 @@ def main(name="experiment"):
     )
 
     best_val_loss = float("inf")
+    best_epoch = 0
+    epochs_without_improvement = 0
+
     best_checkpoint_path = model_dir / "best_model.pt"
     last_checkpoint_path = model_dir / "last_model.pt"
 
@@ -203,8 +209,12 @@ def main(name="experiment"):
 
         writer.add_scalar("lr", optimizer.param_groups[0]["lr"], epoch)
 
-        if val_losses["total"] < best_val_loss:
+        improved = val_losses["total"] < best_val_loss - min_delta
+
+        if improved:
             best_val_loss = val_losses["total"]
+            best_epoch = epoch
+            epochs_without_improvement = 0
 
             torch.save(model.state_dict(), best_checkpoint_path)
 
@@ -216,11 +226,36 @@ def main(name="experiment"):
                 f"val_grad={val_losses['gradient']:.6f}",
                 flush=True,
             )
+        else:
+            epochs_without_improvement += 1
+
+            print(
+                f"no improvement: "
+                f"{epochs_without_improvement}/{patience}",
+                flush=True,
+            )
+
+        writer.add_scalar("early_stopping/best_val_total", best_val_loss, epoch)
+        writer.add_scalar(
+            "early_stopping/epochs_without_improvement",
+            epochs_without_improvement,
+            epoch,
+        )
+
+        if patience > 0 and epochs_without_improvement >= patience:
+            print(
+                f"early stopping at epoch {epoch}; "
+                f"best_epoch={best_epoch}; "
+                f"best_val_total={best_val_loss:.6f}",
+                flush=True,
+            )
+            break
 
     torch.save(model.state_dict(), last_checkpoint_path)
 
     print("saved:", last_checkpoint_path, flush=True)
     print("saved best:", best_checkpoint_path, flush=True)
+    print("best_epoch:", best_epoch, flush=True)
     print("best_val_loss:", best_val_loss, flush=True)
 
     writer.close()
