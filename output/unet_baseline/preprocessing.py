@@ -16,8 +16,6 @@ def load_dataset(path):
     mean = float(d["mean"])
     std = float(d["std"])
 
-    # Always reconstruct raw Kelvin fields from normalized arrays.
-    # This avoids using broken X_raw/Y_raw fields from older dataset versions.
     X_raw = X * std + mean
     Y_raw = Y * std + mean
 
