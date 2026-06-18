@@ -10,10 +10,13 @@ from model import build_model
 from preprocessing import load_dataset, make_loaders
 from utils import load_config, set_seed
 
+'''
+Residual learning proved to be a step up in the performance (in comparison to the direct unet). MAE and RMSE were significantly lower, but Gradient MAE stood in place. I added provisional gradient loss tracking but it resulted in no significant improvement whatsoever (tried it with lambda ranging from .1 to .5). Going back to the standard Loss = MAE(Y, \hat Y) wouldnt impair the model but instead improve the readability of the training loop :/
+'''
 
 def gradient_loss(pred, target):
 
-    # assumed tensor shape = [B, C, H, W] 
+    # assumed tensor shape = [B, C, H, W]
 
     pred_dy = pred[:, :, 1:, :] - pred[:, :, :-1, :]
     target_dy = target[:, :, 1:, :] - target[:, :, :-1, :]
@@ -28,7 +31,7 @@ def gradient_loss(pred, target):
 
 
 def compute_loss(pred, target, pixel_loss_fn, gradient_loss_weight):
-    pixel = pixel_loss_fn(pred, target)
+    pixel = pixel_loss_fn(pred, target) # standard MAE, pixel by pixel
     grad = gradient_loss(pred, target)
     total = pixel + gradient_loss_weight * grad
 
@@ -143,7 +146,7 @@ def main(name="experiment"):
     print("train batches:", len(train_loader), flush=True)
     print("val batches:", len(val_loader), flush=True)
     print("gradient_loss_weight:", gradient_loss_weight, flush=True)
-    print("early_stopping_patience:", patience, flush=True)
+    print("early_stopping_patience:", patience, flush=True) # added early stopping when Taurus started malfunctioning and had to train models locally. In the end, it almost always ran for the entirety of the loop
     print("early_stopping_min_delta:", min_delta, flush=True)
 
     model = build_model(
