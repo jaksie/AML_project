@@ -134,7 +134,7 @@ class ResidualUNet(nn.Module):
 
         self.out = nn.Conv2d(f, out_channels, kernel_size=1)
 
-        nn.init.zeros_(self.out.weight)
+        nn.init.zeros_(self.out.weight) # so that initial prediction is equal to the baseline
         nn.init.zeros_(self.out.bias)
 
     def forward(self, x):

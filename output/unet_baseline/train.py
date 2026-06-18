@@ -12,13 +12,8 @@ from utils import load_config, set_seed
 
 
 def gradient_loss(pred, target):
-    """
-    Spatial gradient loss for tensors with shape:
 
-        (B, C, H, W)
-
-    It compares first-order finite differences in the y and x directions.
-    """
+    # assumed tensor shape = [B, C, H, W] 
 
     pred_dy = pred[:, :, 1:, :] - pred[:, :, :-1, :]
     target_dy = target[:, :, 1:, :] - target[:, :, :-1, :]
